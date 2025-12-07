@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Synthris – Neon Tetris</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Retro / synthwave style font -->
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="bg-grid"></div>
+
+  <div class="game-shell">
+    <header class="game-header">
+      <h1 class="game-title">SYNTHRIS</h1>
+      <div class="subtitle">NEON TETRIS</div>
+    </header>
+
+    <main class="game-layout">
+      <!-- Left HUD -->
+      <section class="side-panel left-panel">
+        <div>
+          <div class="hud-card hold-card">
+            <h2>Hold</h2>
+            <canvas id="hold-canvas" width="96" height="96"></canvas>
+          </div>
+
+          <div class="hud-card paired-stats-card">
+            <div class="paired-stats">
+              <div class="stat">
+                <h2>Level</h2>
+                <div id="level" class="hud-value">1</div>
+              </div>
+              <div class="divider"></div>
+              <div class="stat">
+                <h2>Score</h2>
+                <div id="score" class="hud-value">123456</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="hud-card">
+            <h2>Lines</h2>
+            <div id="lines" class="hud-value">0</div>
+          </div>
+
+          <div class="hud-card controls-card">
+            <h2>Controls</h2>
+            <ul>
+              <li><span>← / A</span> Move Left</li>
+              <li><span>→ / D</span> Move Right</li>
+              <li><span>↓ / S</span> Soft Drop</li>
+              <li><span>↑ / W / X</span> Rotate CW</li>
+              <li><span>Z</span> Rotate CCW</li>
+              <li><span>Space</span> Hard Drop</li>
+              <li><span>Shift</span> Hold Piece</li>
+              <li><span>P / Esc</span> Pause</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- Main Board -->
+      <section class="board-wrapper">
+        <div class="board-frame">
+          <canvas id="tetris" width="300" height="600"></canvas>
+
+          <!-- Overlays -->
+          <div id="pause-overlay" class="overlay hidden">
+            <div class="overlay-inner">
+              <h2>PAUSED</h2>
+              <p>Press <span>P</span> or <span>Esc</span> to resume</p>
+            </div>
+          </div>
+
+          <div id="gameover-overlay" class="overlay hidden">
+            <div class="overlay-inner">
+              <h2>GAME OVER</h2>
+              <p class="final-score-text">Final Score: <span id="final-score">0</span></p>
+              <p>Level: <span id="final-level">1</span> • Lines: <span id="final-lines">0</span></p>
+              <p class="restart-hint">Press <span>R</span> or click here to restart</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right HUD -->
+      <section class="side-panel right-panel">
+        <div class="hud-card next-card">
+          <h2>Next</h2>
+          <canvas id="next-canvas" width="96" height="384"></canvas>
+        </div>
+      </section>
+    </main>
+
+    <footer class="game-footer">
+      <span>SHIFT to Hold • SPACE to Drop • R to Restart</span>
+    </footer>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
