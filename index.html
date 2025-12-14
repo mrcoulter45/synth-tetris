@@ -73,15 +73,6 @@
               <p>Press <span>P</span> or <span>Esc</span> to resume</p>
             </div>
           </div>
-
-          <div id="gameover-overlay" class="overlay hidden">
-            <div class="overlay-inner">
-              <h2>GAME OVER</h2>
-              <p class="final-score-text">Final Score: <span id="final-score">0</span></p>
-              <p>Level: <span id="final-level">1</span> • Lines: <span id="final-lines">0</span></p>
-              <p class="restart-hint">Press <span>R</span> or click here to restart</p>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -93,6 +84,33 @@
         </div>
       </section>
     </main>
+
+    <div id="gameover-overlay" class="overlay overlay-modal hidden">
+      <div class="overlay-inner gameover-dialog">
+        <div class="gameover-summary">
+          <h2>GAME OVER</h2>
+          <p class="final-score-text">Final Score: <span id="final-score">0</span></p>
+          <p class="gameover-stats">Level: <span id="final-level">1</span> • Lines: <span id="final-lines">0</span></p>
+        </div>
+        <div class="scoreboard-card">
+          <div class="score-entry-row">
+            <div class="score-entry">
+              <label for="player-name">Callsign</label>
+              <input id="player-name" name="player-name" type="text" maxlength="10" placeholder="Neon Ace" autocomplete="name" />
+            </div>
+            <button id="save-score-btn" class="neon-button">Record Run</button>
+          </div>
+          <div class="scoreboard-header">
+            <span class="scoreboard-title">Hall of Fame</span>
+            <span class="scoreboard-pill">Top 8</span>
+          </div>
+          <ol id="scoreboard-list" class="scoreboard-list"></ol>
+          <div id="scoreboard-hint" class="scoreboard-hint">Scores are saved locally</div>
+        </div>
+        <p class="restart-hint">Press <span>R</span> or click outside this panel to restart</p>
+        <button id="restart-btn" class="neon-button ghost-button" type="button">Restart</button>
+      </div>
+    </div>
 
     <footer class="game-footer">
       <span>SHIFT to Hold • SPACE to Drop • R to Restart</span>
