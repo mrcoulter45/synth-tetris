@@ -380,7 +380,185 @@ body {
 
 /* Clickable game over overlay */
 #gameover-overlay {
+  cursor: default;
+}
+
+/* --- Scoreboard --- */
+
+.scoreboard-card {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(17, 4, 44, 0.9), rgba(5, 0, 18, 0.92));
+  border: 1px solid rgba(147, 115, 255, 0.65);
+  box-shadow:
+    0 0 14px rgba(125, 85, 255, 0.55),
+    0 0 26px rgba(0, 255, 255, 0.25),
+    inset 0 0 12px rgba(255, 255, 255, 0.05);
+}
+
+.score-entry-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.score-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 180px;
+}
+
+.score-entry label {
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #9ed7ff;
+}
+
+.score-entry input {
+  background: linear-gradient(180deg, rgba(44, 16, 88, 0.9), rgba(14, 2, 32, 0.95));
+  border: 1px solid rgba(151, 123, 255, 0.8);
+  color: #e8f4ff;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-family: "Orbitron", system-ui, sans-serif;
+  font-size: 0.9rem;
+  letter-spacing: 0.05em;
+  box-shadow:
+    inset 0 0 10px rgba(0, 0, 0, 0.6),
+    0 0 10px rgba(0, 246, 255, 0.4);
+  cursor: text;
+}
+
+.score-entry input:focus {
+  outline: 2px solid rgba(0, 246, 255, 0.8);
+  box-shadow:
+    0 0 16px rgba(0, 246, 255, 0.7),
+    0 0 24px rgba(255, 82, 255, 0.4);
+}
+
+.neon-button {
+  background: linear-gradient(135deg, #ff52ff, #00f6ff);
+  color: #0a031c;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   cursor: pointer;
+  box-shadow:
+    0 6px 20px rgba(255, 82, 255, 0.35),
+    0 2px 12px rgba(0, 246, 255, 0.35);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.neon-button:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 10px 26px rgba(255, 82, 255, 0.45),
+    0 4px 16px rgba(0, 246, 255, 0.45);
+}
+
+.ghost-button {
+  margin-top: 10px;
+  background: transparent;
+  border: 1px solid rgba(141, 226, 255, 0.6);
+  color: #d6eaff;
+  box-shadow:
+    0 0 14px rgba(141, 226, 255, 0.35),
+    inset 0 0 12px rgba(141, 226, 255, 0.15);
+}
+
+.scoreboard-header {
+  margin: 14px 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #ff9cff;
+}
+
+.scoreboard-pill {
+  font-size: 0.65rem;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(141, 226, 255, 0.8);
+  background: linear-gradient(90deg, rgba(0, 246, 255, 0.18), rgba(255, 82, 255, 0.18));
+  color: #b8ebff;
+}
+
+.scoreboard-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  counter-reset: score-rank;
+}
+
+.scoreboard-list li {
+  counter-increment: score-rank;
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 12px 9px 38px;
+  margin-bottom: 8px;
+  background: linear-gradient(90deg, rgba(255, 82, 255, 0.08), rgba(0, 246, 255, 0.05));
+  border-radius: 10px;
+  border: 1px solid rgba(151, 123, 255, 0.6);
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.55),
+    inset 0 0 10px rgba(0, 0, 0, 0.35);
+}
+
+.scoreboard-list li::before {
+  content: counter(score-rank) ".";
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #8de2ff;
+  font-weight: 900;
+  text-shadow: 0 0 10px rgba(0, 246, 255, 0.8);
+}
+
+.score-name {
+  color: #e8f4ff;
+  letter-spacing: 0.06em;
+  font-weight: 800;
+}
+
+.score-value {
+  color: #ffe96b;
+  font-weight: 900;
+  text-shadow: 0 0 12px rgba(255, 233, 107, 0.6);
+}
+
+.score-meta {
+  font-size: 0.72rem;
+  color: #9ed7ff;
+}
+
+.scoreboard-list .empty-state {
+  justify-content: center;
+  text-align: center;
+  color: #b9a9ff;
+  grid-template-columns: 1fr;
+  padding-left: 12px;
+}
+
+.scoreboard-hint {
+  margin-top: 6px;
+  font-size: 0.7rem;
+  color: #8de2ff;
+  letter-spacing: 0.08em;
 }
 
 /* --- Footer --- */

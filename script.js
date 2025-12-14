@@ -36,6 +36,12 @@
   const finalScoreEl = document.getElementById("final-score");
   const finalLevelEl = document.getElementById("final-level");
   const finalLinesEl = document.getElementById("final-lines");
+  const gameOverOverlayInner = gameOverOverlay?.querySelector(".overlay-inner");
+  const scoreboardListEl = document.getElementById("scoreboard-list");
+  const playerNameInput = document.getElementById("player-name");
+  const saveScoreBtn = document.getElementById("save-score-btn");
+  const scoreboardHintEl = document.getElementById("scoreboard-hint");
+  const restartBtn = document.getElementById("restart-btn");
 
   // --- Constants ---
   const COLS = 10;
@@ -251,6 +257,10 @@
     L: "#ff9f46",
   };
 
+  const SCORE_STORAGE_KEY = "synthris-highscores";
+  const NAME_STORAGE_KEY = "synthris-player-name";
+  const MAX_SCORES = 8;
+
   // --- Game state ---
   let board;
   let currentPiece = null;
@@ -270,6 +280,10 @@
 
   let lockTimer = 0;
   let isLocking = false;
+
+  let highScores = [];
+  let hasSavedCurrentScore = false;
+  let lastUsedName = "";
 
   // --- Input state ---
   const inputState = { left: false, right: false };
@@ -532,6 +546,156 @@
     dropInterval = Math.max(80, BASE_GRAVITY * Math.pow(0.86, level - 1));
   }
 
+  // --- Scoreboard & persistence ---
+
+  function loadStoredName() {
+    try {
+      const stored = localStorage.getItem(NAME_STORAGE_KEY);
+      if (stored) {
+        lastUsedName = stored;
+      }
+    } catch (err) {
+      lastUsedName = "";
+    }
+  }
+
+  function persistName(name) {
+    try {
+      localStorage.setItem(NAME_STORAGE_KEY, name);
+    } catch (err) {
+      // ignore storage errors
+    }
+  }
+
+  function sortHighScores() {
+    highScores.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.level !== a.level) return b.level - a.level;
+      return b.lines - a.lines;
+    });
+  }
+
+  function loadHighScores() {
+    highScores = [];
+    try {
+      const raw = localStorage.getItem(SCORE_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          highScores = parsed
+            .map((entry) => ({
+              name: (entry.name || "ANON").toString().slice(0, 12).toUpperCase(),
+              score: Number(entry.score) || 0,
+              level: Number(entry.level) || 1,
+              lines: Number(entry.lines) || 0,
+            }))
+            .slice(0, MAX_SCORES);
+        }
+      }
+    } catch (err) {
+      highScores = [];
+    }
+    sortHighScores();
+  }
+
+  function persistHighScores() {
+    try {
+      localStorage.setItem(SCORE_STORAGE_KEY, JSON.stringify(highScores));
+    } catch (err) {
+      // ignore storage errors
+    }
+  }
+
+  function qualifiesForHall(currentScore) {
+    if (!highScores.length) return true;
+    if (highScores.length < MAX_SCORES) return true;
+    const lowest = highScores[highScores.length - 1];
+    return currentScore >= lowest.score;
+  }
+
+  function renderScoreboard() {
+    if (!scoreboardListEl) return;
+
+    scoreboardListEl.innerHTML = "";
+
+    if (!highScores.length) {
+      const empty = document.createElement("li");
+      empty.className = "empty-state";
+      empty.textContent = "No recorded runs yet.";
+      scoreboardListEl.appendChild(empty);
+      return;
+    }
+
+    highScores.forEach((entry) => {
+      const li = document.createElement("li");
+      const scoreValue = typeof entry.score === "number" ? entry.score : Number(entry.score) || 0;
+      const levelValue = entry.level ?? 1;
+      const lineValue = entry.lines ?? 0;
+
+      const nameEl = document.createElement("div");
+      nameEl.className = "score-name";
+      nameEl.textContent = entry.name;
+
+      const metaEl = document.createElement("div");
+      metaEl.className = "score-meta";
+      metaEl.textContent = `Lv ${levelValue} • ${lineValue} lines`;
+
+      const valueEl = document.createElement("div");
+      valueEl.className = "score-value";
+      valueEl.textContent = scoreValue.toLocaleString();
+
+      li.appendChild(nameEl);
+      li.appendChild(metaEl);
+      li.appendChild(valueEl);
+      scoreboardListEl.appendChild(li);
+    });
+  }
+
+  function resetScoreSaveUI() {
+    hasSavedCurrentScore = false;
+    if (saveScoreBtn) {
+      saveScoreBtn.disabled = false;
+      saveScoreBtn.textContent = "Record Run";
+    }
+    if (scoreboardHintEl) {
+      scoreboardHintEl.textContent = "Scores are saved locally";
+    }
+    if (playerNameInput) {
+      playerNameInput.value = lastUsedName;
+    }
+  }
+
+  function handleScoreSubmit() {
+    if (!isGameOver || hasSavedCurrentScore) return;
+
+    const rawName = playerNameInput ? playerNameInput.value.trim() : "";
+    const normalizedName = (rawName || lastUsedName || "NEON PILOT").slice(0, 12).toUpperCase();
+
+    lastUsedName = normalizedName;
+    persistName(normalizedName);
+
+    highScores.push({
+      name: normalizedName,
+      score,
+      level,
+      lines: linesCleared,
+    });
+
+    sortHighScores();
+    highScores = highScores.slice(0, MAX_SCORES);
+    persistHighScores();
+    renderScoreboard();
+
+    hasSavedCurrentScore = true;
+    if (saveScoreBtn) {
+      saveScoreBtn.disabled = true;
+      saveScoreBtn.textContent = "Saved";
+    }
+    if (scoreboardHintEl) {
+      scoreboardHintEl.textContent = "Saved to your neon hall.";
+    }
+  }
+
   // --- Hold mechanic (Shift) ---
 
   /*
@@ -654,6 +818,15 @@
     finalScoreEl.textContent = score;
     finalLevelEl.textContent = level;
     finalLinesEl.textContent = linesCleared;
+    resetScoreSaveUI();
+    renderScoreboard();
+
+    if (scoreboardHintEl) {
+      scoreboardHintEl.textContent = qualifiesForHall(score)
+        ? "Record this run to enter the hall."
+        : "Only top runs stay—log yours to challenge the board.";
+    }
+
     gameOverOverlay.classList.remove("hidden");
   }
 
@@ -673,11 +846,13 @@
     linesCleared = 0;
     isPaused = false;
     isGameOver = false;
+    hasSavedCurrentScore = false;
     lastTime = 0;
     dropAccumulator = 0;
     updateDropInterval();
     updateHUD();
     hideGameOverOverlay();
+    resetScoreSaveUI();
 
     refillBag();
     spawnNextPiece();
@@ -976,6 +1151,15 @@
 
   function handleKeyDown(e) {
     const key = e.key;
+    const isTypingName = document.activeElement === playerNameInput;
+
+    if (isTypingName) {
+      if (key === "Enter") {
+        e.preventDefault();
+        handleScoreSubmit();
+      }
+      return;
+    }
 
     if (["ArrowLeft", "ArrowRight", "ArrowDown", "ArrowUp", " ", "z", "Z", "x", "X", "w", "W", "a", "A", "s", "S", "d", "D"].includes(key)) {
       e.preventDefault();
@@ -1072,12 +1256,45 @@
     showPauseOverlay(isPaused);
   }
 
-  // Clicking game over overlay also restarts
-  gameOverOverlay.addEventListener("click", () => {
-    if (isGameOver) {
+  // Clicking outside the card restarts; keep the card interactive
+  if (gameOverOverlayInner) {
+    gameOverOverlayInner.addEventListener("click", (e) => e.stopPropagation());
+  }
+
+  gameOverOverlay.addEventListener("click", (e) => {
+    if (isGameOver && e.target === gameOverOverlay) {
       restartGame();
     }
   });
+
+  if (saveScoreBtn) {
+    saveScoreBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      handleScoreSubmit();
+    });
+  }
+
+  if (restartBtn) {
+    restartBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      restartGame();
+    });
+  }
+
+  if (playerNameInput) {
+    playerNameInput.addEventListener("input", () => {
+      if (isGameOver) {
+        hasSavedCurrentScore = false;
+        if (saveScoreBtn) {
+          saveScoreBtn.disabled = false;
+          saveScoreBtn.textContent = "Record Run";
+        }
+        if (scoreboardHintEl) {
+          scoreboardHintEl.textContent = "Record this run to enter the hall.";
+        }
+      }
+    });
+  }
 
   document.addEventListener("keydown", handleKeyDown);
   document.addEventListener("keyup", handleKeyUp);
@@ -1088,6 +1305,10 @@
 
   // --- Initialize game ---
   function init() {
+    loadStoredName();
+    loadHighScores();
+    resetScoreSaveUI();
+    renderScoreboard();
     board = createMatrix(ROWS, COLS, null);
     updateDropInterval();
     refillBag();
