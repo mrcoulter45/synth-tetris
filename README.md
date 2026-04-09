@@ -29,6 +29,7 @@ A browser-based Tetris remake with a neon synthwave aesthetic, built entirely wi
 - Shift-triggered hold slot plus a three-piece preview queue, each drawn on dedicated mini canvases.
 - Dynamic scoring, line tracking, and level-based gravity that accelerates the drop interval as you progress.
 - Pause/game-over overlays with restart shortcuts, plus a responsive HUD showing score, level, lines, controls, and status hints.
+- Global Top 8 leaderboard support for the hosted site via Supabase, with cached and local fallback score views when the network is unavailable.
 - Synthwave styling: neon gradients, star-field grid, Orbitron typography, glowing panels, and futuristic chrome accents.
 
 ## Controls
@@ -53,7 +54,7 @@ A browser-based Tetris remake with a neon synthwave aesthetic, built entirely wi
 1. Clone/download the project and move into the directory:
    ```bash
    git clone <your-fork-or-repo-url>
-   cd Tetris
+   cd synth-tetris
    ```
 2. Open `index.html` directly in any modern browser, or serve the folder if you prefer a local web server:
    ```bash
@@ -63,13 +64,54 @@ A browser-based Tetris remake with a neon synthwave aesthetic, built entirely wi
    ```
 3. Play immediately: no build tooling or dependencies are required.
 
+## Hosted Leaderboard Setup
+
+The GitHub Pages build stays fully static. The shared leaderboard is powered by Supabase, and the browser reads/writes directly using the public project URL and anon key.
+
+1. Create a Supabase project.
+2. In the Supabase SQL editor, run `supabase/leaderboard.sql`.
+3. Copy your project URL and anon key from Supabase.
+4. In `script.js`, replace:
+   ```js
+   const SUPABASE_URL = "https://YOUR-PROJECT-REF.supabase.co";
+   const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";
+   ```
+5. Deploy the updated static files to GitHub Pages.
+
+### Supabase Table Contract
+
+The hosted leaderboard expects a `public.leaderboard_scores` table with:
+
+- `id uuid primary key default gen_random_uuid()`
+- `name text not null`
+- `score integer not null`
+- `level integer not null`
+- `lines integer not null`
+- `created_at timestamptz not null default now()`
+
+The SQL file also applies:
+
+- input constraints for callsign, score, level, and line ranges
+- a ranking index on score/level/lines/created time
+- RLS policies that allow public reads and validated public inserts
+
+## Leaderboard Behavior
+
+- When the hosted leaderboard is reachable, the game shows the global Top 8 and saves runs to Supabase.
+- If the hosted leaderboard cannot be reached, the game falls back to the most recently cached global board.
+- If no cached global board is available, the game falls back to local scores stored in the current browser.
+- Player callsigns are always stored locally so the input can be prefilled on later runs.
+- Local fallback scores are not auto-synced later.
+
 ## Project Structure
 
 ```
 .
 ├── index.html      # Layout skeleton, canvases, HUD, overlays
 ├── styles.css      # Synthwave visual treatment and responsive layout
-├── script.js       # Game loop, input, scoring, hold/queue logic, rendering
+├── script.js       # Game loop, input, scoring, hold/queue logic, rendering, hosted leaderboard
+├── supabase/
+│   └── leaderboard.sql
 └── images/         # Reference screenshots used in this README
 ```
 

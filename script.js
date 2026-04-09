@@ -257,9 +257,24 @@
     L: "#ff9f46",
   };
 
-  const SCORE_STORAGE_KEY = "synthris-highscores";
+  const LEGACY_SCORE_STORAGE_KEY = "synthris-highscores";
   const NAME_STORAGE_KEY = "synthris-player-name";
+  const HOSTED_SCORE_CACHE_KEY = "synthris-hosted-highscores-cache";
+  const LOCAL_FALLBACK_SCORE_KEY = "synthris-local-fallback-highscores";
   const MAX_SCORES = 8;
+  const DEFAULT_CALLSIGN = "NEON PILOT";
+  const SUPABASE_URL = "https://qxmubbptdoujzvsktnlw.supabase.co";
+  const SUPABASE_ANON_KEY = "sb_publishable_qltDdPKcgMpjzkWMzhys5A_cpj-Iqbp";
+  const LEADERBOARD_TABLE = "leaderboard_scores";
+  const LEADERBOARD_LIMIT = 8;
+
+  const LEADERBOARD_SOURCES = {
+    HOSTED: "hosted",
+    CACHED: "cached-hosted",
+    LOCAL: "local-fallback",
+    LOADING: "loading",
+    UNCONFIGURED: "unconfigured",
+  };
 
   // --- Game state ---
   let board;
@@ -282,8 +297,12 @@
   let isLocking = false;
 
   let highScores = [];
+  let localFallbackScores = [];
   let hasSavedCurrentScore = false;
+  let isSavingScore = false;
   let lastUsedName = "";
+  let leaderboardSource = LEADERBOARD_SOURCES.LOADING;
+  const supabaseClient = createSupabaseClient();
 
   // --- Input state ---
   const inputState = { left: false, right: false };
@@ -548,11 +567,189 @@
 
   // --- Scoreboard & persistence ---
 
+  function hasConfiguredValue(value) {
+    return typeof value === "string" && value.length > 0 && !value.includes("YOUR_");
+  }
+
+  function createSupabaseClient() {
+    const createClient = window.supabase?.createClient;
+    if (
+      typeof createClient !== "function" ||
+      !hasConfiguredValue(SUPABASE_URL) ||
+      !hasConfiguredValue(SUPABASE_ANON_KEY)
+    ) {
+      return null;
+    }
+
+    try {
+      return createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+        global: {
+          headers: {
+            "x-client-info": "synthris-web",
+          },
+        },
+      });
+    } catch (err) {
+      return null;
+    }
+  }
+
+  function normalizeCallsign(rawName) {
+    const cleaned = (rawName || "")
+      .toString()
+      .toUpperCase()
+      .replace(/[^A-Z0-9 ]+/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 12);
+
+    return cleaned || DEFAULT_CALLSIGN;
+  }
+
+  function sanitizeScoreEntry(entry) {
+    if (!entry || typeof entry !== "object") return null;
+
+    const scoreValue = Number(entry.score);
+    const levelValue = Number(entry.level);
+    const lineValue = Number(entry.lines);
+    if (
+      !Number.isFinite(scoreValue) ||
+      !Number.isFinite(levelValue) ||
+      !Number.isFinite(lineValue)
+    ) {
+      return null;
+    }
+
+    const normalized = {
+      name: normalizeCallsign(entry.name),
+      score: Math.max(0, Math.min(99999999, Math.trunc(scoreValue))),
+      level: Math.max(1, Math.min(999, Math.trunc(levelValue))),
+      lines: Math.max(0, Math.min(9999, Math.trunc(lineValue))),
+    };
+
+    const rawCreatedAt = entry.created_at ?? entry.createdAt;
+    if (rawCreatedAt) {
+      const parsedCreatedAt = new Date(rawCreatedAt);
+      if (!Number.isNaN(parsedCreatedAt.getTime())) {
+        normalized.created_at = parsedCreatedAt.toISOString();
+      }
+    }
+
+    return normalized;
+  }
+
+  function compareScoreEntries(a, b) {
+    if (b.score !== a.score) return b.score - a.score;
+    if (b.level !== a.level) return b.level - a.level;
+    if (b.lines !== a.lines) return b.lines - a.lines;
+
+    const aTime = a.created_at ? Date.parse(a.created_at) : Number.POSITIVE_INFINITY;
+    const bTime = b.created_at ? Date.parse(b.created_at) : Number.POSITIVE_INFINITY;
+    if (aTime !== bTime) return aTime - bTime;
+
+    return a.name.localeCompare(b.name);
+  }
+
+  function sortHighScores(entries) {
+    return entries.sort(compareScoreEntries);
+  }
+
+  function readStoredScoreList(key) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return sortHighScores(
+        parsed.map(sanitizeScoreEntry).filter(Boolean).slice(0, MAX_SCORES)
+      );
+    } catch (err) {
+      return [];
+    }
+  }
+
+  function writeStoredScoreList(key, entries) {
+    try {
+      localStorage.setItem(key, JSON.stringify(entries.slice(0, MAX_SCORES)));
+    } catch (err) {
+      // ignore storage errors
+    }
+  }
+
+  function cacheHostedLeaderboard(entries) {
+    writeStoredScoreList(HOSTED_SCORE_CACHE_KEY, entries);
+  }
+
+  function loadCachedHostedLeaderboard() {
+    return readStoredScoreList(HOSTED_SCORE_CACHE_KEY);
+  }
+
+  function loadLocalFallbackScores() {
+    const localScores = readStoredScoreList(LOCAL_FALLBACK_SCORE_KEY);
+    if (localScores.length) {
+      return localScores;
+    }
+
+    const legacyScores = readStoredScoreList(LEGACY_SCORE_STORAGE_KEY);
+    if (legacyScores.length) {
+      writeStoredScoreList(LOCAL_FALLBACK_SCORE_KEY, legacyScores);
+    }
+    return legacyScores;
+  }
+
+  function saveLocalFallbackScore(entry) {
+    localFallbackScores = sortHighScores([...localFallbackScores, entry]).slice(0, MAX_SCORES);
+    writeStoredScoreList(LOCAL_FALLBACK_SCORE_KEY, localFallbackScores);
+  }
+
+  function setLeaderboardEntries(entries, source) {
+    highScores = sortHighScores(entries.slice()).slice(0, MAX_SCORES);
+    leaderboardSource = source;
+    renderScoreboard();
+  }
+
+  function getBaseLeaderboardHint() {
+    switch (leaderboardSource) {
+      case LEADERBOARD_SOURCES.HOSTED:
+        return "Global hall of fame";
+      case LEADERBOARD_SOURCES.CACHED:
+        return "Offline: showing cached global scores";
+      case LEADERBOARD_SOURCES.LOCAL:
+        return "Offline: showing your local scores";
+      case LEADERBOARD_SOURCES.UNCONFIGURED:
+        return "Global hall is not configured yet.";
+      default:
+        return "Loading global hall...";
+    }
+  }
+
+  function setScoreboardHint(message = getBaseLeaderboardHint()) {
+    if (scoreboardHintEl) {
+      scoreboardHintEl.textContent = message;
+    }
+  }
+
+  function syncScoreboardHintToState() {
+    if (isGameOver && !hasSavedCurrentScore) {
+      setPendingScoreHint();
+      return;
+    }
+
+    if (!hasSavedCurrentScore) {
+      setScoreboardHint();
+    }
+  }
+
   function loadStoredName() {
     try {
       const stored = localStorage.getItem(NAME_STORAGE_KEY);
       if (stored) {
-        lastUsedName = stored;
+        lastUsedName = normalizeCallsign(stored);
       }
     } catch (err) {
       lastUsedName = "";
@@ -567,43 +764,78 @@
     }
   }
 
-  function sortHighScores() {
-    highScores.sort((a, b) => {
-      if (b.score !== a.score) return b.score - a.score;
-      if (b.level !== a.level) return b.level - a.level;
-      return b.lines - a.lines;
-    });
+  async function fetchHostedLeaderboard() {
+    if (!supabaseClient) {
+      return { ok: false, error: "not-configured" };
+    }
+
+    try {
+      const { data, error } = await supabaseClient
+        .from(LEADERBOARD_TABLE)
+        .select("name, score, level, lines, created_at")
+        .order("score", { ascending: false })
+        .order("level", { ascending: false })
+        .order("lines", { ascending: false })
+        .order("created_at", { ascending: true })
+        .limit(LEADERBOARD_LIMIT);
+
+      if (error) {
+        return { ok: false, error };
+      }
+
+      return {
+        ok: true,
+        entries: sortHighScores((data || []).map(sanitizeScoreEntry).filter(Boolean)).slice(
+          0,
+          MAX_SCORES
+        ),
+      };
+    } catch (err) {
+      return { ok: false, error: err };
+    }
   }
 
-  function loadHighScores() {
-    highScores = [];
+  async function submitHostedScore(entry) {
+    if (!supabaseClient) {
+      return { ok: false, error: "not-configured" };
+    }
+
     try {
-      const raw = localStorage.getItem(SCORE_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          highScores = parsed
-            .map((entry) => ({
-              name: (entry.name || "ANON").toString().slice(0, 12).toUpperCase(),
-              score: Number(entry.score) || 0,
-              level: Number(entry.level) || 1,
-              lines: Number(entry.lines) || 0,
-            }))
-            .slice(0, MAX_SCORES);
+      const { error } = await supabaseClient.from(LEADERBOARD_TABLE).insert([
+        {
+          name: entry.name,
+          score: entry.score,
+          level: entry.level,
+          lines: entry.lines,
+        },
+      ]);
+
+      if (error) {
+        return { ok: false, error };
+      }
+
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: err };
+    }
+  }
+
+  async function refreshHostedLeaderboard() {
+    const result = await fetchHostedLeaderboard();
+    if (!result.ok) {
+      if (leaderboardSource === LEADERBOARD_SOURCES.HOSTED) {
+        const cachedScores = loadCachedHostedLeaderboard();
+        if (cachedScores.length) {
+          setLeaderboardEntries(cachedScores, LEADERBOARD_SOURCES.CACHED);
         }
       }
-    } catch (err) {
-      highScores = [];
+      return result;
     }
-    sortHighScores();
-  }
 
-  function persistHighScores() {
-    try {
-      localStorage.setItem(SCORE_STORAGE_KEY, JSON.stringify(highScores));
-    } catch (err) {
-      // ignore storage errors
-    }
+    cacheHostedLeaderboard(result.entries);
+    setLeaderboardEntries(result.entries, LEADERBOARD_SOURCES.HOSTED);
+    syncScoreboardHintToState();
+    return result;
   }
 
   function qualifiesForHall(currentScore) {
@@ -651,49 +883,111 @@
     });
   }
 
+  function setPendingScoreHint() {
+    if (leaderboardSource === LEADERBOARD_SOURCES.CACHED) {
+      setScoreboardHint("Offline: showing cached global scores");
+      return;
+    }
+
+    if (leaderboardSource === LEADERBOARD_SOURCES.LOCAL) {
+      setScoreboardHint("Offline: showing your local scores");
+      return;
+    }
+
+    if (leaderboardSource === LEADERBOARD_SOURCES.UNCONFIGURED) {
+      setScoreboardHint("Global hall is not configured yet.");
+      return;
+    }
+
+    setScoreboardHint(
+      qualifiesForHall(score)
+        ? "Record this run to enter the global hall."
+        : "Only top global runs stay. Push higher to enter the hall."
+    );
+  }
+
   function resetScoreSaveUI() {
     hasSavedCurrentScore = false;
+    isSavingScore = false;
     if (saveScoreBtn) {
       saveScoreBtn.disabled = false;
       saveScoreBtn.textContent = "Record Run";
     }
-    if (scoreboardHintEl) {
-      scoreboardHintEl.textContent = "Scores are saved locally";
-    }
+    setScoreboardHint();
     if (playerNameInput) {
       playerNameInput.value = lastUsedName;
     }
   }
 
-  function handleScoreSubmit() {
-    if (!isGameOver || hasSavedCurrentScore) return;
+  function entryAppearsInScores(targetEntry, entries) {
+    return entries.some(
+      (entry) =>
+        entry.name === targetEntry.name &&
+        entry.score === targetEntry.score &&
+        entry.level === targetEntry.level &&
+        entry.lines === targetEntry.lines
+    );
+  }
+
+  async function handleScoreSubmit() {
+    if (!isGameOver || hasSavedCurrentScore || isSavingScore) return;
 
     const rawName = playerNameInput ? playerNameInput.value.trim() : "";
-    const normalizedName = (rawName || lastUsedName || "NEON PILOT").slice(0, 12).toUpperCase();
-
-    lastUsedName = normalizedName;
-    persistName(normalizedName);
-
-    highScores.push({
+    const normalizedName = normalizeCallsign(rawName || lastUsedName || DEFAULT_CALLSIGN);
+    const scoreEntry = sanitizeScoreEntry({
       name: normalizedName,
       score,
       level,
       lines: linesCleared,
+      created_at: new Date().toISOString(),
     });
 
-    sortHighScores();
-    highScores = highScores.slice(0, MAX_SCORES);
-    persistHighScores();
-    renderScoreboard();
+    lastUsedName = normalizedName;
+    persistName(normalizedName);
+
+    isSavingScore = true;
+    if (saveScoreBtn) {
+      saveScoreBtn.disabled = true;
+      saveScoreBtn.textContent = "Saving...";
+    }
+
+    const submitResult = await submitHostedScore(scoreEntry);
+    if (submitResult.ok) {
+      const refreshResult = await refreshHostedLeaderboard();
+
+      hasSavedCurrentScore = true;
+      if (saveScoreBtn) {
+        saveScoreBtn.textContent = "Saved";
+      }
+
+      if (refreshResult.ok) {
+        setScoreboardHint(
+          entryAppearsInScores(scoreEntry, refreshResult.entries)
+            ? "Saved to the global hall."
+            : "Run submitted, but it did not reach the Top 8."
+        );
+      } else {
+        setScoreboardHint("Saved to the global hall. Refresh to see the latest board.");
+      }
+
+      isSavingScore = false;
+      return;
+    }
+
+    saveLocalFallbackScore(scoreEntry);
+    if (
+      leaderboardSource !== LEADERBOARD_SOURCES.HOSTED &&
+      leaderboardSource !== LEADERBOARD_SOURCES.CACHED
+    ) {
+      setLeaderboardEntries(localFallbackScores, LEADERBOARD_SOURCES.LOCAL);
+    }
 
     hasSavedCurrentScore = true;
     if (saveScoreBtn) {
-      saveScoreBtn.disabled = true;
       saveScoreBtn.textContent = "Saved";
     }
-    if (scoreboardHintEl) {
-      scoreboardHintEl.textContent = "Saved to your neon hall.";
-    }
+    setScoreboardHint("Couldn't reach the global hall. Saved locally.");
+    isSavingScore = false;
   }
 
   // --- Hold mechanic (Shift) ---
@@ -820,12 +1114,7 @@
     finalLinesEl.textContent = linesCleared;
     resetScoreSaveUI();
     renderScoreboard();
-
-    if (scoreboardHintEl) {
-      scoreboardHintEl.textContent = qualifiesForHall(score)
-        ? "Record this run to enter the hall."
-        : "Only top runs stay—log yours to challenge the board.";
-    }
+    setPendingScoreHint();
 
     gameOverOverlay.classList.remove("hidden");
   }
@@ -1283,15 +1572,14 @@
 
   if (playerNameInput) {
     playerNameInput.addEventListener("input", () => {
-      if (isGameOver) {
+      if (isGameOver && !hasSavedCurrentScore) {
         hasSavedCurrentScore = false;
+        isSavingScore = false;
         if (saveScoreBtn) {
           saveScoreBtn.disabled = false;
           saveScoreBtn.textContent = "Record Run";
         }
-        if (scoreboardHintEl) {
-          scoreboardHintEl.textContent = "Record this run to enter the hall.";
-        }
+        setPendingScoreHint();
       }
     });
   }
@@ -1304,9 +1592,21 @@
   });
 
   // --- Initialize game ---
-  function init() {
+  async function init() {
     loadStoredName();
-    loadHighScores();
+    localFallbackScores = loadLocalFallbackScores();
+    const cachedHostedScores = loadCachedHostedLeaderboard();
+
+    if (cachedHostedScores.length) {
+      setLeaderboardEntries(cachedHostedScores, LEADERBOARD_SOURCES.CACHED);
+    } else if (localFallbackScores.length) {
+      setLeaderboardEntries(localFallbackScores, LEADERBOARD_SOURCES.LOCAL);
+    } else if (supabaseClient) {
+      setLeaderboardEntries([], LEADERBOARD_SOURCES.LOADING);
+    } else {
+      setLeaderboardEntries([], LEADERBOARD_SOURCES.UNCONFIGURED);
+    }
+
     resetScoreSaveUI();
     renderScoreboard();
     board = createMatrix(ROWS, COLS, null);
@@ -1316,7 +1616,21 @@
     spawnNextPiece();
     updateHUD();
     requestAnimationFrame(gameLoop);
+
+    if (supabaseClient) {
+      const result = await refreshHostedLeaderboard();
+      if (!result.ok && leaderboardSource === LEADERBOARD_SOURCES.LOADING) {
+        if (cachedHostedScores.length) {
+          setLeaderboardEntries(cachedHostedScores, LEADERBOARD_SOURCES.CACHED);
+        } else if (localFallbackScores.length) {
+          setLeaderboardEntries(localFallbackScores, LEADERBOARD_SOURCES.LOCAL);
+        } else {
+          setLeaderboardEntries([], LEADERBOARD_SOURCES.LOCAL);
+        }
+        setScoreboardHint();
+      }
+    }
   }
 
-  init();
+  void init();
 })();
